@@ -456,16 +456,42 @@ module OmniAuth
       end
 
       def valid_response_type?
-        return true if params.key?(configured_response_type)
-
-        error_attrs = RESPONSE_TYPE_EXCEPTIONS[configured_response_type]
-        fail!(error_attrs[:key], error_attrs[:exception_class].new(params['error']))
-
+        # If response_type is an array, check if ANY of the types are in params
+        if configured_response_type.is_a?(Array)
+          return true if configured_response_type.any? { |type| params.key?(type.to_s) }
+          
+          # If no match found, use the first one for the error message
+          error_type = configured_response_type.first.to_s
+          error_attrs = RESPONSE_TYPE_EXCEPTIONS[error_type]
+        else
+          # Original single type flow
+          return true if params.key?(configured_response_type)
+          
+          error_attrs = RESPONSE_TYPE_EXCEPTIONS[configured_response_type]
+        end
+        
+        # Handle error case - make sure error_attrs isn't nil
+        if error_attrs
+          fail!(error_attrs[:key], error_attrs[:exception_class].new(params['error']))
+        else
+          # Default error if we don't have a specific error for this response type
+          fail!(:invalid_response, StandardError.new("Invalid response_type: #{configured_response_type}"))
+        end
+      
         false
       end
 
       def configured_response_type
-        @configured_response_type ||= options.response_type.to_s
+        @configured_response_type ||= begin
+          response_type = options.response_type
+          if response_type.is_a?(Array)
+            # If array contains multiple response types, use them all
+            response_type
+          else
+            # Otherwise, convert to string as before
+            response_type.to_s
+          end
+        end
       end
 
       def verify_id_token!(id_token)
